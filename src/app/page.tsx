@@ -4,7 +4,7 @@ import { useAuth as usePrivy } from "@/lib/hooks";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Globe, Zap, Shield } from "lucide-react";
+import { ArrowRight, Zap } from "lucide-react";
 
 export default function LandingPage() {
   const { login, authenticated, ready } = usePrivy();
@@ -49,10 +49,6 @@ export default function LandingPage() {
             Instantly.
           </span>
         </h1>
-        <p className="text-lg text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed">
-          Load USD from your local currency, browse tokenized real-world assets,
-          and invest — all in one place. No complexity, no delays.
-        </p>
         <div className="flex items-center justify-center gap-4">
           <Button onClick={login} size="lg" className="gap-2">
             Get Started <ArrowRight className="w-5 h-5" />
@@ -60,37 +56,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Features */}
-      <section className="max-w-5xl mx-auto grid md:grid-cols-3 gap-6 px-8 pb-24">
-        {[
-          {
-            icon: Globe,
-            title: "Global Access",
-            desc: "Invest in US-based real-world assets from the UAE. Load funds in AED, see your balance in USD.",
-          },
-          {
-            icon: Zap,
-            title: "Instant Settlement",
-            desc: "Your money moves in seconds, not days. Buy investment tokens instantly with a single click.",
-          },
-          {
-            icon: Shield,
-            title: "Secure & Simple",
-            desc: "Bank-grade security with a consumer-friendly experience. No crypto knowledge required.",
-          },
-        ].map((f) => (
-          <div
-            key={f.title}
-            className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-6"
-          >
-            <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center mb-4">
-              <f.icon className="w-5 h-5 text-indigo-400" />
-            </div>
-            <h3 className="font-semibold mb-2">{f.title}</h3>
-            <p className="text-sm text-slate-400 leading-relaxed">{f.desc}</p>
-          </div>
-        ))}
-      </section>
     </div>
   );
 }
