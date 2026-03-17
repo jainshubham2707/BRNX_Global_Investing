@@ -89,6 +89,18 @@ export async function getUsdcBalance(address: string): Promise<string> {
   }
 }
 
+// ── ETH Balance ───────────────────────────────────────────────────────
+
+export async function getEthBalance(address: string): Promise<string> {
+  try {
+    const balance = await publicClient.getBalance({ address: address as `0x${string}` });
+    return formatUnits(balance, 18);
+  } catch (error) {
+    console.error(`Failed to get ETH balance for ${address}:`, error);
+    return "0";
+  }
+}
+
 // ── USDC Transfers ─────────────────────────────────────────────────────
 
 export async function transferUsdc(

@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { users, tokens, transactions, portfolio, instantPayRequests, onchainTransactions } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { getPrivyUser } from "@/lib/auth";
-import { transferUsdcFromAdmin, transferUsdcFromBuyerToIssuer, getAdminAddress, getIssuerAddress } from "@/lib/chain";
+import { transferUsdcFromAdmin, transferUsdcFromBuyerToIssuer, getAdminAddress, getIssuerAddress, getUsdcBalance, getEthBalance } from "@/lib/chain";
 
 /**
  * Auto-approve instant pay: buyer triggers this after uploading receipt.
@@ -40,6 +40,22 @@ export async function POST(req: NextRequest) {
     const baseAed = tokenCostUsd * rate;
     const feeAed = aedPaid - baseAed;
 
+    // ── Verify admin wallet has enough USDC and ETH before TX 1 ────────
+    const [adminUsdcBal, adminEthBal] = await Promise.all([
+      getUsdcBalance(adminAddress),
+      getEthBalance(adminAddress),
+    ]);
+    if (parseFloat(adminUsdcBal) < tokenCostUsd) {
+      return NextResponse.json({
+        error: `Admin wallet has insufficient USDC: ${adminUsdcBal} available, ${tokenCostUsd} required`,
+      }, { status: 400 });
+    }
+    if (parseFloat(adminEthBal) < 0.0005) {
+      return NextResponse.json({
+        error: `Admin wallet has insufficient ETH for gas: ${adminEthBal} ETH`,
+      }, { status: 400 });
+    }
+
     // ── TX 1: Platform wallet → User wallet (credit full token cost) ──
     const { txHash: creditTxHash } = await transferUsdcFromAdmin(user.walletAddress, tokenCostUsd);
 
@@ -55,6 +71,22 @@ export async function POST(req: NextRequest) {
       feeUsdc: String(feeAed / rate),
       exchangeRate: String(rate),
     });
+
+    // ── Verify buyer wallet has enough USDC and ETH before TX 2 ────────
+    const [buyerUsdcBal, buyerEthBal] = await Promise.all([
+      getUsdcBalance(user.walletAddress),
+      getEthBalance(user.walletAddress),
+    ]);
+    if (parseFloat(buyerUsdcBal) < tokenCostUsd) {
+      return NextResponse.json({
+        error: `Buyer wallet has insufficient USDC: ${buyerUsdcBal} available, ${tokenCostUsd} required`,
+      }, { status: 400 });
+    }
+    if (parseFloat(buyerEthBal) < 0.0005) {
+      return NextResponse.json({
+        error: `Buyer wallet has insufficient ETH for gas: ${buyerEthBal} ETH`,
+      }, { status: 400 });
+    }
 
     // ── TX 2: Buyer wallet → Issuer wallet (token payment) ─────────────
     const { txHash: debitTxHash } = await transferUsdcFromBuyerToIssuer(user.walletAddress, tokenCostUsd);
