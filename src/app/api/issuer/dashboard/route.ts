@@ -201,6 +201,25 @@ export async function GET(req: NextRequest) {
           ) / purchaseTxs.length
         : 0;
 
+    // ── Offramp history ────────────────────────────────────────────────
+    const offrampTxs = await db
+      .select({
+        id: transactions.id,
+        amountUsdc: transactions.amountUsdc,
+        txHash: transactions.txHash,
+        status: transactions.status,
+        createdAt: transactions.createdAt,
+        metadata: transactions.metadata,
+      })
+      .from(transactions)
+      .where(eq(transactions.type, "offramp"))
+      .orderBy(desc(transactions.createdAt))
+      .limit(100);
+
+    const totalOfframped = offrampTxs
+      .filter((tx) => tx.status === "completed")
+      .reduce((sum, tx) => sum + parseFloat(tx.amountUsdc || "0"), 0);
+
     return NextResponse.json({
       issuer: {
         companyName: issuer.companyName,
@@ -216,11 +235,13 @@ export async function GET(req: NextRequest) {
         totalSupply,
         avgOrderSize,
         tokensRemaining: totalSupply - totalSold,
+        totalOfframped,
       },
       tokenAnalytics,
       investors,
       transactions: issuerTxs,
       purchaseHistory: purchaseTxs,
+      offrampHistory: offrampTxs,
     });
   } catch (error) {
     console.error("GET /api/issuer/dashboard error:", error);

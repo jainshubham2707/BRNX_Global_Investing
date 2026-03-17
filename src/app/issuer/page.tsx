@@ -62,6 +62,15 @@ interface PurchaseTx {
   buyerName: string | null;
 }
 
+interface OfframpTx {
+  id: string;
+  amountUsdc: string;
+  txHash: string | null;
+  status: string;
+  createdAt: string;
+  metadata: string | null;
+}
+
 interface OnchainTx {
   id: string;
   type: string;
@@ -88,11 +97,13 @@ interface IssuerData {
     totalSupply: number;
     avgOrderSize: number;
     tokensRemaining: number;
+    totalOfframped: number;
   };
   tokenAnalytics: TokenAnalytics[];
   investors: Investor[];
   transactions: OnchainTx[];
   purchaseHistory: PurchaseTx[];
+  offrampHistory: OfframpTx[];
 }
 
 const EXPLORER_URL =
@@ -253,7 +264,8 @@ export default function IssuerDashboardPage() {
         {tab === "tokens" && <TokensTab data={data} />}
         {tab === "investors" && <InvestorsTab data={data} />}
         {tab === "transactions" && <TransactionsTab data={data} />}
-        {tab === "offramp" && <OffRampTab data={data} />}
+        {tab === "offramp" && <OffRampTab data={data} onSuccess={fetchData} />}
+
       </div>
     </AppShell>
   );
@@ -262,13 +274,17 @@ export default function IssuerDashboardPage() {
 /* ─── Overview Tab ──────────────────────────────────────────────────── */
 
 function OverviewTab({ data }: { data: IssuerData | null }) {
+  const onChainUsdc = parseFloat(data?.stats.onChainUsdc || "0");
+  const totalOfframped = data?.stats.totalOfframped || 0;
+  const totalRevenue = onChainUsdc + totalOfframped;
+
   const stats = [
     {
       label: "Total Revenue",
-      value: formatUsd(data?.stats.totalRevenue || 0),
+      value: formatUsd(totalRevenue),
       icon: <DollarSign className="w-5 h-5 text-emerald-600" />,
       bg: "bg-emerald-50",
-      sub: `${formatUsd(data?.stats.totalUsdcReceived || 0)} USDC received on-chain`,
+      sub: `On-chain ${formatUsd(onChainUsdc)} + Offramped ${formatUsd(totalOfframped)}`,
     },
     {
       label: "Tokens Sold",
@@ -286,17 +302,24 @@ function OverviewTab({ data }: { data: IssuerData | null }) {
     },
     {
       label: "On-Chain USDC",
-      value: formatUsd(parseFloat(data?.stats.onChainUsdc || "0")),
+      value: formatUsd(onChainUsdc),
       icon: <Wallet className="w-5 h-5 text-teal-600" />,
       bg: "bg-teal-50",
       sub: "Live balance on Base Sepolia",
+    },
+    {
+      label: "USDC Offramped",
+      value: formatUsd(totalOfframped),
+      icon: <Landmark className="w-5 h-5 text-orange-600" />,
+      bg: "bg-orange-50",
+      sub: `${data?.offrampHistory?.filter(t => t.status === "completed").length || 0} completed transactions`,
     },
   ];
 
   return (
     <div className="space-y-6">
       {/* Stats */}
-      <div className="grid md:grid-cols-4 gap-4">
+      <div className="grid md:grid-cols-5 gap-4">
         {stats.map((s) => (
           <Card key={s.label}>
             <CardContent className="py-5">
@@ -689,7 +712,7 @@ function InvestorsTab({ data }: { data: IssuerData | null }) {
 /* ─── Transactions Tab ──────────────────────────────────────────────── */
 
 function TransactionsTab({ data }: { data: IssuerData | null }) {
-  const [filter, setFilter] = useState<"all" | "onchain" | "purchases">("all");
+  const [filter, setFilter] = useState<"all" | "onchain" | "purchases" | "offramped">("all");
 
   return (
     <div className="space-y-6">
@@ -700,6 +723,7 @@ function TransactionsTab({ data }: { data: IssuerData | null }) {
             { id: "all", label: "All" },
             { id: "onchain", label: "On-Chain USDC" },
             { id: "purchases", label: "Purchase History" },
+            { id: "offramped", label: "USDC Offramped" },
           ] as const
         ).map((f) => (
           <button
@@ -886,23 +910,143 @@ function TransactionsTab({ data }: { data: IssuerData | null }) {
           </CardContent>
         </Card>
       )}
+
+      {/* USDC Offramped */}
+      {(filter === "all" || filter === "offramped") && (
+        <Card>
+          <CardHeader>
+            <h2 className="text-lg font-semibold text-slate-900">USDC Offramped</h2>
+            <p className="text-sm text-slate-500">
+              USDC transferred from issuer wallet to platform wallet
+            </p>
+          </CardHeader>
+          <CardContent>
+            {!data?.offrampHistory?.length ? (
+              <p className="text-slate-400 text-center py-8">No off-ramp transactions yet</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100">
+                      <th className="text-right py-3 px-2 text-xs text-slate-400 uppercase tracking-wider font-medium">
+                        Amount
+                      </th>
+                      <th className="text-left py-3 px-2 text-xs text-slate-400 uppercase tracking-wider font-medium">
+                        Status
+                      </th>
+                      <th className="text-left py-3 px-2 text-xs text-slate-400 uppercase tracking-wider font-medium">
+                        TX Hash
+                      </th>
+                      <th className="text-left py-3 px-2 text-xs text-slate-400 uppercase tracking-wider font-medium">
+                        Date
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.offrampHistory.map((tx) => (
+                      <tr
+                        key={tx.id}
+                        className="border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors"
+                      >
+                        <td className="py-3 px-2 text-right">
+                          <span className="font-semibold text-orange-600">
+                            -{formatUsd(parseFloat(tx.amountUsdc || "0"))}
+                          </span>
+                        </td>
+                        <td className="py-3 px-2">
+                          <Badge
+                            variant={
+                              tx.status === "completed"
+                                ? "success"
+                                : tx.status === "failed"
+                                  ? "danger"
+                                  : "warning"
+                            }
+                          >
+                            {tx.status}
+                          </Badge>
+                        </td>
+                        <td className="py-3 px-2">
+                          {tx.txHash ? (
+                            <a
+                              href={`${EXPLORER_URL}/tx/${tx.txHash}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-mono"
+                            >
+                              {tx.txHash.slice(0, 10)}...
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          ) : (
+                            <span className="text-xs text-slate-300">-</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-2 text-xs text-slate-500">
+                          {new Date(tx.createdAt).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
 
 /* ─── Off-Ramp Tab ──────────────────────────────────────────────────── */
 
-function OffRampTab({ data }: { data: IssuerData | null }) {
+function OffRampTab({ data, onSuccess }: { data: IssuerData | null; onSuccess: () => void }) {
   const usdcBalance = parseFloat(data?.stats.onChainUsdc || "0");
   const [amount, setAmount] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastTxHash, setLastTxHash] = useState<string | null>(null);
+
+  const handleOfframp = async () => {
+    const amountNum = parseFloat(amount);
+    if (!amountNum || amountNum <= 0 || amountNum > usdcBalance) return;
+
+    setSubmitting(true);
+    setError(null);
+    setLastTxHash(null);
+
+    try {
+      const res = await fetch("/api/issuer/offramp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: amountNum }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        setError(result.error || "Off-ramp failed");
+        return;
+      }
+      setLastTxHash(result.txHash);
+      setAmount("");
+      onSuccess();
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <h2 className="text-lg font-semibold text-slate-900">Off-Ramp USDC to USD</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Off-Ramp USDC</h2>
           <p className="text-sm text-slate-500">
-            Convert USDC in your custody wallet to USD in your US bank account
+            Transfer USDC from your custody wallet to the platform wallet
           </p>
         </CardHeader>
         <CardContent>
@@ -920,7 +1064,7 @@ function OffRampTab({ data }: { data: IssuerData | null }) {
             {/* Amount Input */}
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                Amount to Off-Ramp (USD)
+                Amount to Off-Ramp (USDC)
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
@@ -930,7 +1074,8 @@ function OffRampTab({ data }: { data: IssuerData | null }) {
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   max={usdcBalance}
-                  className="w-full pl-8 pr-4 py-3 border border-slate-200 rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  disabled={submitting}
+                  className="w-full pl-8 pr-4 py-3 border border-slate-200 rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50"
                 />
               </div>
               <div className="flex gap-2 mt-2">
@@ -940,7 +1085,8 @@ function OffRampTab({ data }: { data: IssuerData | null }) {
                     onClick={() =>
                       setAmount(((usdcBalance * pct) / 100).toFixed(2))
                     }
-                    className="px-3 py-1 bg-slate-100 rounded-lg text-xs text-slate-600 hover:bg-slate-200 transition-colors"
+                    disabled={submitting}
+                    className="px-3 py-1 bg-slate-100 rounded-lg text-xs text-slate-600 hover:bg-slate-200 transition-colors disabled:opacity-50"
                   >
                     {pct}%
                   </button>
@@ -968,47 +1114,144 @@ function OffRampTab({ data }: { data: IssuerData | null }) {
                 </div>
                 <div>
                   <p className="text-indigo-400">Account Holder</p>
-                  <p className="text-indigo-900 font-medium">Atlas Capital Partners LLC</p>
+                  <p className="text-indigo-900 font-medium">Sunpay Ltd.</p>
                 </div>
               </div>
             </div>
+
+            {/* Error / Success */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+            {lastTxHash && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-700">
+                Off-ramp successful!{" "}
+                <a
+                  href={`${EXPLORER_URL}/tx/${lastTxHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline font-medium"
+                >
+                  View transaction
+                </a>
+              </div>
+            )}
 
             {/* Submit */}
             <div className="flex items-center gap-3">
               <Button
                 variant="primary"
                 size="lg"
-                disabled={!amount || parseFloat(amount) <= 0 || parseFloat(amount) > usdcBalance}
-                onClick={() => alert("Off-ramp functionality coming soon! In production, this would initiate a USDC → USD conversion via the off-ramp partner.")}
+                disabled={!amount || parseFloat(amount) <= 0 || parseFloat(amount) > usdcBalance || submitting}
+                onClick={handleOfframp}
                 className="flex-1"
               >
-                <Landmark className="w-4 h-4 mr-2" />
-                Initiate Off-Ramp {amount ? `(${formatUsd(parseFloat(amount))})` : ""}
+                {submitting ? (
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Landmark className="w-4 h-4 mr-2" />
+                )}
+                {submitting
+                  ? "Processing..."
+                  : `Initiate Off-Ramp ${amount ? `(${formatUsd(parseFloat(amount))})` : ""}`}
               </Button>
             </div>
 
             <p className="text-xs text-slate-400 text-center">
-              Off-ramp processing typically takes 1-2 business days. USDC is converted to USD at 1:1 via the off-ramp partner.
+              USDC will be transferred from your issuer wallet to the platform wallet at 1:1.
             </p>
           </div>
         </CardContent>
       </Card>
 
-      {/* Off-Ramp History (placeholder) */}
+      {/* Off-Ramp History */}
       <Card>
         <CardHeader>
           <h2 className="text-lg font-semibold text-slate-900">Off-Ramp History</h2>
         </CardHeader>
         <CardContent>
-          <div className="text-center py-8">
-            <Landmark className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-            <p className="text-slate-400 text-sm">No off-ramp transactions yet</p>
-            <p className="text-xs text-slate-300 mt-1">
-              Off-ramp history will appear here once you convert USDC to USD
-            </p>
-          </div>
+          {!data?.offrampHistory?.length ? (
+            <div className="text-center py-8">
+              <Landmark className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-slate-400 text-sm">No off-ramp transactions yet</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100">
+                    <th className="text-right py-3 px-2 text-xs text-slate-400 uppercase tracking-wider font-medium">
+                      Amount
+                    </th>
+                    <th className="text-left py-3 px-2 text-xs text-slate-400 uppercase tracking-wider font-medium">
+                      Status
+                    </th>
+                    <th className="text-left py-3 px-2 text-xs text-slate-400 uppercase tracking-wider font-medium">
+                      TX Hash
+                    </th>
+                    <th className="text-left py-3 px-2 text-xs text-slate-400 uppercase tracking-wider font-medium">
+                      Date
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.offrampHistory.map((tx) => (
+                    <tr
+                      key={tx.id}
+                      className="border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors"
+                    >
+                      <td className="py-3 px-2 text-right">
+                        <span className="font-semibold text-orange-600">
+                          -{formatUsd(parseFloat(tx.amountUsdc || "0"))}
+                        </span>
+                      </td>
+                      <td className="py-3 px-2">
+                        <Badge
+                          variant={
+                            tx.status === "completed"
+                              ? "success"
+                              : tx.status === "failed"
+                                ? "danger"
+                                : "warning"
+                          }
+                        >
+                          {tx.status}
+                        </Badge>
+                      </td>
+                      <td className="py-3 px-2">
+                        {tx.txHash ? (
+                          <a
+                            href={`${EXPLORER_URL}/tx/${tx.txHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-mono"
+                          >
+                            {tx.txHash.slice(0, 10)}...
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        ) : (
+                          <span className="text-xs text-slate-300">-</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-2 text-xs text-slate-500">
+                        {new Date(tx.createdAt).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
   );
 }
+

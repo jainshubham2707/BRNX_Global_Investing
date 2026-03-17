@@ -156,6 +156,7 @@ export const onchainTxTypeEnum = pgEnum("onchain_tx_type", [
   "wallet_pay",
   "instant_pay_credit",
   "instant_pay_debit",
+  "offramp",
 ]);
 
 export const onchainTransactions = pgTable("onchain_transactions", {
